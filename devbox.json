@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.3/.schema/devbox.schema.json",
+  "packages": {
+    "uv": "latest",
+    "tmux": "latest",
+    "gitmux": "latest",
+    "tmuxinator": "latest",
+    "gnumake": "latest",
+    "prek": "latest",
+    "hadolint": "latest",
+    "ruff": "latest",
+    "skjold": "latest",
+    "yamllint": "latest"
+  },
+  "env": {
+    "UV_MANAGED_PYTHON": "1",
+    "PYTHONPATH": ".:.venv/lib/python3.12/site-packages:$PYTHONPATH"
+  },
+  "shell": {
+    "init_hook": [
+      "prek install -f",
+      "export PATH=.venv/bin:$PATH"
+    ],
+    "scripts": {}
+  }
+}

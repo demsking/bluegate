@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "bluegate:app",
+        "--reload",
+        "--reload-dir",
+        "bluegate",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8765"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.example",
+      "env": {
+        "BLUEGATE_LOG_LEVEL": "DEBUG",
+        "BLUEGATE_API_PREFIX": "/",
+        "BLUEGATE_CORS_ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:8080"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Pytest",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "tests",
+        "-v"
+      ],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env.example",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "UI Dev Server",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/ui"
+    }
+  ]
+}
