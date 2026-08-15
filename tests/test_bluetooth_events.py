@@ -16,6 +16,8 @@ import asyncio
 from contextlib import aclosing
 from types import SimpleNamespace
 
+from dbus_next.signature import Variant
+
 from bluegate.bluetooth.bus import SystemBusClient
 from bluegate.bluetooth.events import BluetoothEventBroker
 from bluegate.bluetooth.manager import BlueZManager
@@ -51,6 +53,7 @@ def _make_device(device_id: str = "11:22:33:44:55:66") -> Device:
     device_class=None,
     appearance=None,
     rssi=-50,
+    battery_level=92,
     tx_power=None,
     paired=True,
     trusted=True,
@@ -125,5 +128,41 @@ def test_handle_properties_changed_publishes_adapter_changed_event(monkeypatch) 
 
     assert event.type == "adapter_changed"
     assert event.adapter.id == "hci0"
+
+  asyncio.run(_run())
+
+
+def test_list_devices_reads_battery_level_from_battery_interface(monkeypatch) -> None:
+  async def _run() -> None:
+    manager = BlueZManager(SystemBusClient(), BluetoothEventBroker())
+
+    async def fake_get_managed_objects() -> dict[str, dict[str, dict[str, Variant]]]:
+      return {
+        "/org/bluez/hci0/dev_11_22_33_44_55_66": {
+          "org.bluez.Device1": {
+            "Adapter": Variant("o", "/org/bluez/hci0"),
+            "Address": Variant("s", "11:22:33:44:55:66"),
+            "Name": Variant("s", "Headset"),
+            "Alias": Variant("s", "Headset"),
+            "AddressType": Variant("s", "public"),
+            "Paired": Variant("b", True),
+            "Trusted": Variant("b", True),
+            "Connected": Variant("b", True),
+            "Blocked": Variant("b", False),
+            "ServicesResolved": Variant("b", False),
+            "UUIDs": Variant("as", []),
+          },
+          "org.bluez.Battery1": {
+            "Percentage": Variant("y", 92),
+          },
+        }
+      }
+
+    monkeypatch.setattr(manager, "_get_managed_objects", fake_get_managed_objects)
+
+    devices = await manager.list_devices()
+
+    assert len(devices) == 1
+    assert devices[0].battery_level == 92
 
   asyncio.run(_run())

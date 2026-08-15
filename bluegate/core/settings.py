@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     description="Port number to bind the server to. Must be between 1 and 65535.",
   )
 
-  api_prefix: str = Field(default="/api", description="API prefix for all endpoints.")
+  api_prefix: str = Field(default="/", description="API prefix for all endpoints.")
 
   log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Logging level.")  # pyrefly: ignore [bad-assignment]
   log_file: str | None = Field(default=None, description="Path to rotating log file.")
@@ -78,8 +79,8 @@ class Settings(BaseSettings):
   )
 
   cors_allowed_origins: Any = Field(
-    default_factory=lambda: ["*"],
-    description=("Allowed CORS origins for browser clients."),
+    default_factory=list,
+    description=("Allowed CORS origins for browser clients. Empty disables browser cross-origin access."),
   )
 
   @field_validator("api_prefix")
@@ -101,20 +102,35 @@ class Settings(BaseSettings):
 
   @field_validator("cors_allowed_origins", mode="before")
   @classmethod
-  def validate_cors_allowed_origins(cls, value: list[str] | str) -> list[str]:
+  def validate_cors_allowed_origins(cls, value: Any) -> list[str]:
     if isinstance(value, list):
       origins = [str(origin).strip() for origin in value if str(origin).strip()]
 
-      return origins or ["*"]
+      return origins
+
+    if value is None:
+      return []
+
+    if not isinstance(value, str):
+      raise ValueError("BLUEGATE_CORS_ALLOWED_ORIGINS must be a string or list of strings")
 
     raw = value.strip()
 
     if not raw:
-      return ["*"]
+      return []
+
+    if raw.startswith("["):
+      try:
+        parsed = json.loads(raw)
+      except json.JSONDecodeError:
+        parsed = None
+
+      if isinstance(parsed, list):
+        return [str(origin).strip() for origin in parsed if str(origin).strip()]
 
     origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
 
-    return origins or ["*"]
+    return origins
 
 
 @lru_cache

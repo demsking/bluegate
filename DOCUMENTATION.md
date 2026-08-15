@@ -1,42 +1,33 @@
-**BlueGate** is ???.
+**BlueGate** is a Bluetooth gateway and device manager focused on exposing
+Bluetooth operations to external systems through a lightweight HTTP service.
 
 Project repository: https://gitlab.com/demsking/bluegate
 
-![BlueGate Logo](./static/logo.png)
+![BlueGate Logo](./htdocs/logo.png)
 
 ## Core Capabilities
 
-- Expose Zigbee2MQTT devices through the Model Context Protocol (MCP).
-- Discover and inspect connected smart home devices.
-- Read the current state and attributes of supported devices.
-- Control lights, switches, plugs, locks, covers, and other actuators.
-- Retrieve sensor measurements, including temperature, humidity, power,
-  occupancy, and more.
-- Execute device-specific actions through a unified interface.
-- Automatically reflect changes reported by Zigbee2MQTT.
-- Provide a consistent API regardless of the underlying Zigbee device.
-- Support AI assistants and autonomous agents with structured MCP tools.
-- Secure access to smart home devices using configurable authentication.
-- Run as a lightweight Docker container with simple deployment.
-- Integrate seamlessly with the Oremi ecosystem and other MCP-compatible
-  clients.
+- Bluetooth adapter discovery and status reporting.
+- Device discovery and inventory for nearby peripherals.
+- Pairing lifecycle operations (pair, trust, remove).
+- GATT browsing and interaction primitives for services,
+  characteristics, and descriptors.
+- WebSocket event streaming for real-time Bluetooth state updates.
+- Configurable runtime behavior through environment variables.
 
 ## Deployment
 
 BlueGate is distributed as a multi-platform Docker image for
-`linux/amd64` and `linux/arm64`. It can be deployed as a standalone service or
-integrated into the Oremi ecosystem alongside services such as Oremi Isinmi,
-Oremi Ojọ, Oremi Rediyo, and Oremi Kansa.
+`linux/amd64` and `linux/arm64` and can be deployed as a standalone service.
 
 The following sections describe the available Docker image, persistent storage
 requirements, and example deployments using both Docker and Docker Compose.
 
 ### Command Line
 
-Before installing BlueGate from PyPI, ensure the following requirements are
-met:
+Before installing BlueGate from PyPI, ensure the following requirements are met:
 
-- Python 3.12 or later.
+- Python 3.11 or later.
 - `uv` (recommended) or `pip` for package installation.
 
 BlueGate can be installed either as a standalone command-line application
@@ -71,28 +62,10 @@ configured environment variables.
 ### Docker Image
 
 The [`demsking/bluegate`](https://hub.docker.com/r/demsking/bluegate)
-Docker image is officially available on Docker Hub, supporting both
-`linux/amd64` and `linux/arm64` platforms. The image exposes port `8765`, which
-serves the REST API and the interactive documentation.
+Docker image is officially available on Docker Hub and supports both
+`linux/amd64` and `linux/arm64` platforms.
 
-The interactive documentation can be accessed at `http://localhost:8765/docs/`
-and allows testing available endpoints directly from the browser.
-
-### Docker Volume
-
-The Docker image defines a persistent volume at `/oremi/data`.
-
-This directory is used as the default storage location for:
-
-- **FastEmbed Model Cache**: Downloaded model weights for semantic vector search
-  (`BLUEGATE_EMBEDDING_CACHE_DIR`). Mounting this volume prevents
-  re-downloading model files when the container is recreated.
-- **Application Logs**: Rotating log files if `BLUEGATE_LOG_FILE` is
-  configured to write to a path inside `/oremi/data` (e.g.,
-  `/oremi/data/bluegate.log`).
-
-Mounting a volume or host directory to `/oremi/data` is recommended to maintain
-cache persistence across container restarts.
+The container exposes port `8765` for the BlueGate service.
 
 ### Deploy with Docker
 
@@ -104,13 +77,14 @@ to run BlueGate:
 docker run -d \
   --name bluegate \
   --env-file <path_to_env_file> \
+  -v /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro \
+  -e BLUEGATE_DBUS_SYSTEM_BUS=unix:path=/run/dbus/system_bus_socket \
   -p 8765:8765 \
-  -v bluegate-data:/oremi/data \
   demsking/bluegate
 ```
 
 Replace `<path_to_env_file>` with the path to your
-[environment variables](#environment-variables) file containing the desired
+[environment variables](#configuration) file containing the desired
 configuration.
 
 ### Deploy with Docker Compose
@@ -119,6 +93,18 @@ Create a `compose.yaml` file:
 
 ```yaml
 services:
+  bluegate:
+    image: demsking/bluegate:latest
+    container_name: bluegate
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BLUEGATE_DBUS_SYSTEM_BUS: unix:path=/run/dbus/system_bus_socket
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+    ports:
+      - "8765:8765"
 ```
 
 Start the services with:
@@ -127,11 +113,11 @@ Start the services with:
 docker compose up -d
 ```
 
-Once started, open the interactive documentation at:
+BlueGate will be available on `http://localhost:8765`.
 
-```txt
-http://localhost:8765/docs/
-```
+To enable Bluetooth features from a container, ensure the host is running
+both `dbus` and `bluetoothd`, and that the system bus socket is mounted into
+the container as shown above.
 
 ## Configuration
 
@@ -140,16 +126,65 @@ a `.env` file.
 
 ### Server
 
-- `BLUEGATE_SERVER_HOST`: bind address; default `0.0.0.0`.
+- `BLUEGATE_SERVER_HOST`: Bind address. Default: `127.0.0.1`.
 - `BLUEGATE_SERVER_PORT`: bind port; default `8765`.
 - `BLUEGATE_API_PREFIX`: optional route prefix; default `/`.
+
+### Bluetooth
+
+- `BLUEGATE_DBUS_SYSTEM_BUS`: Optional D-Bus system bus address.
+- `BLUEGATE_BLUETOOTH_AGENT_CAPABILITY`: Agent capability. One of:
+  `DisplayOnly`, `DisplayYesNo`, `KeyboardOnly`, `NoInputNoOutput`,
+  `KeyboardDisplay`. Default: `DisplayYesNo`.
+- `BLUEGATE_SCAN_TIMEOUT`: Default scan timeout in seconds. Default: `20`.
+
+### Real-Time
+
+- `BLUEGATE_WEBSOCKET_HEARTBEAT`: WebSocket heartbeat interval in seconds.
+  Default: `30`.
+- `BLUEGATE_CORS_ALLOWED_ORIGINS`: Comma-separated list of allowed origins.
+  Default: disabled (empty). Browser cross-origin requests are blocked unless
+  this setting is explicitly configured.
+
+### UI Proxy Pattern
+
+BlueGate UI now targets BlueGate servers through an internal same-origin proxy.
+The UI node definition includes `id`, `name`, and `server`. For a node with
+`id=bamenda`, UI requests are emitted as:
+
+- `https://<ui-host>/bamenda/api/adapters/`
+- `wss://<ui-host>/bamenda/api/ws/`
+
+Your reverse proxy should route `/bamenda/*` to the corresponding BlueGate
+server (for example `http://192.168.1.60:18765`).
+
+When using the bundled BlueGate UI container, configure routing with
+`BLUEGATE_NODES_JSON`, for example:
+
+```json
+[
+  {
+    "id": "bamenda",
+    "name": "Bamenda node",
+    "server": "http://192.168.1.60:18765"
+  },
+  {
+    "id": "yaounde",
+    "name": "Yaounde node",
+    "server": "http://192.168.1.61:18765"
+  }
+]
+```
+
+At startup, the UI entrypoint generates `/nodes.json` from this config with
+only public metadata (`id`, `name`), and the frontend loads that file.
 
 ### Logging
 
 - `BLUEGATE_LOG_LEVEL`: Optional. Defaults to `INFO`. Logging level:
   `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`.
-- `BLUEGATE_LOG_FILE`: Optional. Defaults to unset (console logging only). Path to
-  the rotating application log file.
+- `BLUEGATE_LOG_FILE`: Optional. Defaults to unset (console logging only).
+  Path to the rotating application log file.
 
 ## Development
 

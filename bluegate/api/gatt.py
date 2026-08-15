@@ -30,7 +30,7 @@ from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import TypeVar
 
-from dbus_next import DBusError
+from dbus_next.errors import DBusError
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import status

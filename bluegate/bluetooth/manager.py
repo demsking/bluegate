@@ -16,12 +16,13 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from collections.abc import Mapping
+from typing import Any
 from typing import cast
 from typing import Protocol
 from urllib.parse import unquote
 
-from dbus_next import Message
-from dbus_next.aio import MessageBus
+from dbus_next.aio.message_bus import MessageBus
+from dbus_next.message import Message
 from dbus_next.proxy_object import BaseProxyInterface
 from dbus_next.signature import Variant
 
@@ -32,6 +33,7 @@ from bluegate.bluetooth.events import BluetoothEventBroker
 from bluegate.models.adapter import Adapter
 from bluegate.models.adapter import AdapterPatch
 from bluegate.models.device import Device
+from bluegate.models.device import DevicePatch
 from bluegate.models.events import AdapterChangedEvent
 from bluegate.models.events import CharacteristicChangedEvent
 from bluegate.models.events import DeviceChangedEvent
@@ -47,6 +49,7 @@ OBJECT_MANAGER = "org.freedesktop.DBus.ObjectManager"
 PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 ADAPTER_IFACE = "org.bluez.Adapter1"
 DEVICE_IFACE = "org.bluez.Device1"
+BATTERY_IFACE = "org.bluez.Battery1"
 GATT_SERVICE_IFACE = "org.bluez.GattService1"
 GATT_CHARACTERISTIC_IFACE = "org.bluez.GattCharacteristic1"
 GATT_DESCRIPTOR_IFACE = "org.bluez.GattDescriptor1"
@@ -79,6 +82,8 @@ class BluetoothManager(Protocol):
 
   async def get_device(self, device_id: str) -> Device | None: ...
 
+  async def patch_device(self, device_id: str, patch: DevicePatch) -> Device | None: ...
+
   async def pair_device(self, device_id: str) -> bool: ...
 
   async def connect_device(self, device_id: str) -> bool: ...
@@ -86,6 +91,8 @@ class BluetoothManager(Protocol):
   async def disconnect_device(self, device_id: str) -> bool: ...
 
   async def trust_device(self, device_id: str, trusted: bool) -> bool: ...
+
+  async def unpair_device(self, device_id: str) -> bool: ...
 
   async def remove_device(self, device_id: str) -> bool: ...
 
@@ -120,6 +127,54 @@ class BluetoothManager(Protocol):
   async def write_descriptor(
     self, device_id: str, service_id: str, characteristic_id: str, descriptor_id: str, value: bytes
   ) -> GattDescriptor | None: ...
+
+
+class _PropertiesInterface(Protocol):
+  async def call_set(self, interface_name: str, property_name: str, value: Variant) -> None: ...
+
+
+class _AdapterInterface(Protocol):
+  async def call_start_discovery(self) -> None: ...
+
+  async def call_stop_discovery(self) -> None: ...
+
+  async def call_remove_device(self, device_path: str) -> None: ...
+
+
+class _DeviceInterface(Protocol):
+  async def call_pair(self) -> None: ...
+
+  async def call_connect(self) -> None: ...
+
+  async def call_disconnect(self) -> None: ...
+
+
+class _GattCharacteristicInterface(Protocol):
+  async def call_read_value(self, options: Mapping[str, Variant]) -> bytes: ...
+
+  async def call_write_value(self, value: list[int], options: Mapping[str, Variant]) -> None: ...
+
+  async def call_start_notify(self) -> None: ...
+
+  async def call_stop_notify(self) -> None: ...
+
+
+class _GattDescriptorInterface(Protocol):
+  async def call_read_value(self, options: Mapping[str, Variant]) -> bytes: ...
+
+  async def call_write_value(self, value: list[int], options: Mapping[str, Variant]) -> None: ...
+
+
+class _ObjectManagerInterface(Protocol):
+  async def call_get_managed_objects(self) -> Any: ...
+
+
+class _AgentManagerInterface(Protocol):
+  async def call_register_agent(self, path: str, capability: str) -> None: ...
+
+  async def call_request_default_agent(self, path: str) -> None: ...
+
+  async def call_unregister_agent(self, path: str) -> None: ...
 
 
 class BlueZManager:
@@ -170,7 +225,15 @@ class BlueZManager:
     return self._pairing_agent
 
   async def list_adapters(self) -> list[Adapter]:
-    managed = await self._get_managed_objects()
+    try:
+      managed = await self._get_managed_objects()
+    except Exception as exc:
+      if self._bluez_missing(exc):
+        self._bluez_available = False
+        logger.warning("BlueZ is not available on this host; returning an empty adapter list.")
+        return []
+      raise
+
     devices_per_adapter = self._count_devices_by_adapter(managed)
 
     adapters: list[Adapter] = []
@@ -212,6 +275,9 @@ class BlueZManager:
 
     properties = await self._get_properties_interface(adapter.object_path)
 
+    if patch.alias is not None:
+      await properties.call_set(ADAPTER_IFACE, "Alias", Variant("s", patch.alias))
+
     if patch.powered is not None:
       await properties.call_set(ADAPTER_IFACE, "Powered", Variant("b", patch.powered))
 
@@ -228,7 +294,7 @@ class BlueZManager:
     if adapter is None:
       return False
 
-    iface = await self._get_interface(adapter.object_path, ADAPTER_IFACE)
+    iface = await self._get_adapter_interface(adapter.object_path)
     await iface.call_start_discovery()
     return True
 
@@ -237,7 +303,7 @@ class BlueZManager:
     if adapter is None:
       return False
 
-    iface = await self._get_interface(adapter.object_path, ADAPTER_IFACE)
+    iface = await self._get_adapter_interface(adapter.object_path)
     await iface.call_stop_discovery()
     return True
 
@@ -249,6 +315,8 @@ class BlueZManager:
       props = ifaces.get(DEVICE_IFACE)
       if props is None:
         continue
+
+      battery_props = ifaces.get(BATTERY_IFACE)
 
       adapter_path = self._as_object_path(props.get("Adapter"))
       adapter_id = adapter_path.rsplit("/", 1)[-1] if adapter_path else "unknown"
@@ -268,6 +336,7 @@ class BlueZManager:
           device_class=self._as_int(props.get("Class")),
           appearance=self._as_int(props.get("Appearance")),
           rssi=self._as_int(props.get("RSSI")),
+          battery_level=self._as_int(battery_props.get("Percentage")) if battery_props is not None else None,
           tx_power=self._as_int(props.get("TxPower")),
           paired=self._as_bool(props.get("Paired")),
           trusted=self._as_bool(props.get("Trusted")),
@@ -295,16 +364,28 @@ class BlueZManager:
     if device is None:
       return False
 
-    iface = await self._get_interface(device.object_path, DEVICE_IFACE)
+    iface = await self._get_device_interface(device.object_path)
     await iface.call_pair()
     return True
+
+  async def patch_device(self, device_id: str, patch: DevicePatch) -> Device | None:
+    device = await self.get_device(device_id)
+    if device is None:
+      return None
+
+    properties = await self._get_properties_interface(device.object_path)
+
+    if patch.alias is not None:
+      await properties.call_set(DEVICE_IFACE, "Alias", Variant("s", patch.alias))
+
+    return await self.get_device(device_id)
 
   async def connect_device(self, device_id: str) -> bool:
     device = await self.get_device(device_id)
     if device is None:
       return False
 
-    iface = await self._get_interface(device.object_path, DEVICE_IFACE)
+    iface = await self._get_device_interface(device.object_path)
     await iface.call_connect()
     return True
 
@@ -313,7 +394,7 @@ class BlueZManager:
     if device is None:
       return False
 
-    iface = await self._get_interface(device.object_path, DEVICE_IFACE)
+    iface = await self._get_device_interface(device.object_path)
     await iface.call_disconnect()
     return True
 
@@ -336,10 +417,13 @@ class BlueZManager:
     if adapter is None:
       return False
 
-    iface = await self._get_interface(adapter.object_path, ADAPTER_IFACE)
+    iface = await self._get_adapter_interface(adapter.object_path)
     await iface.call_remove_device(device.object_path)
 
     return True
+
+  async def unpair_device(self, device_id: str) -> bool:
+    return await self.remove_device(device_id)
 
   async def list_services(self, device_id: str) -> list[GattService]:
     device = await self.get_device(device_id)
@@ -404,7 +488,7 @@ class BlueZManager:
     if characteristic is None:
       return None
 
-    iface = await self._get_interface(characteristic.object_path, GATT_CHARACTERISTIC_IFACE)
+    iface = await self._get_gatt_characteristic_interface(characteristic.object_path)
     await iface.call_read_value({})
 
     return await self.get_characteristic(device_id, service_id, characteristic_id)
@@ -416,7 +500,7 @@ class BlueZManager:
     if characteristic is None:
       return None
 
-    iface = await self._get_interface(characteristic.object_path, GATT_CHARACTERISTIC_IFACE)
+    iface = await self._get_gatt_characteristic_interface(characteristic.object_path)
     await iface.call_write_value(list(value), {})
 
     return await self.get_characteristic(device_id, service_id, characteristic_id)
@@ -426,7 +510,7 @@ class BlueZManager:
     if characteristic is None:
       return None
 
-    iface = await self._get_interface(characteristic.object_path, GATT_CHARACTERISTIC_IFACE)
+    iface = await self._get_gatt_characteristic_interface(characteristic.object_path)
     await iface.call_start_notify()
 
     return await self.get_characteristic(device_id, service_id, characteristic_id)
@@ -436,7 +520,7 @@ class BlueZManager:
     if characteristic is None:
       return None
 
-    iface = await self._get_interface(characteristic.object_path, GATT_CHARACTERISTIC_IFACE)
+    iface = await self._get_gatt_characteristic_interface(characteristic.object_path)
     await iface.call_stop_notify()
 
     return await self.get_characteristic(device_id, service_id, characteristic_id)
@@ -486,7 +570,7 @@ class BlueZManager:
     if descriptor is None:
       return None
 
-    iface = await self._get_interface(descriptor.object_path, GATT_DESCRIPTOR_IFACE)
+    iface = await self._get_gatt_descriptor_interface(descriptor.object_path)
     await iface.call_read_value({})
 
     return await self.get_descriptor(device_id, service_id, characteristic_id, descriptor_id)
@@ -498,7 +582,7 @@ class BlueZManager:
     if descriptor is None:
       return None
 
-    iface = await self._get_interface(descriptor.object_path, GATT_DESCRIPTOR_IFACE)
+    iface = await self._get_gatt_descriptor_interface(descriptor.object_path)
     await iface.call_write_value(list(value), {})
 
     return await self.get_descriptor(device_id, service_id, characteristic_id, descriptor_id)
@@ -517,8 +601,19 @@ class BlueZManager:
       value=self._as_hex(props.get("Value")),
     )
 
+  def _bluez_missing(self, exc: Exception) -> bool:
+    name = str(getattr(exc, "name", "")).lower()
+    message = str(exc).lower()
+    return (
+      "org.bluez" in message
+      or "org.bluez" in name
+      or "namehasnoowner" in name
+      or "not provided by any .service files" in message
+      or "serviceunknown" in name
+    )
+
   async def _get_managed_objects(self) -> dict[str, dict[str, dict[str, Variant]]]:
-    manager = await self._get_interface("/", OBJECT_MANAGER)
+    manager = await self._get_object_manager_interface("/")
     objects = await manager.call_get_managed_objects()
     return cast(dict[str, dict[str, dict[str, Variant]]], objects)
 
@@ -531,8 +626,26 @@ class BlueZManager:
 
     return proxy_object.get_interface(interface_name)
 
-  async def _get_properties_interface(self, path: str) -> BaseProxyInterface:
-    return await self._get_interface(path, PROPERTIES_IFACE)
+  async def _get_properties_interface(self, path: str) -> _PropertiesInterface:
+    return cast(_PropertiesInterface, await self._get_interface(path, PROPERTIES_IFACE))
+
+  async def _get_adapter_interface(self, path: str) -> _AdapterInterface:
+    return cast(_AdapterInterface, await self._get_interface(path, ADAPTER_IFACE))
+
+  async def _get_device_interface(self, path: str) -> _DeviceInterface:
+    return cast(_DeviceInterface, await self._get_interface(path, DEVICE_IFACE))
+
+  async def _get_gatt_characteristic_interface(self, path: str) -> _GattCharacteristicInterface:
+    return cast(_GattCharacteristicInterface, await self._get_interface(path, GATT_CHARACTERISTIC_IFACE))
+
+  async def _get_gatt_descriptor_interface(self, path: str) -> _GattDescriptorInterface:
+    return cast(_GattDescriptorInterface, await self._get_interface(path, GATT_DESCRIPTOR_IFACE))
+
+  async def _get_object_manager_interface(self, path: str) -> _ObjectManagerInterface:
+    return cast(_ObjectManagerInterface, await self._get_interface(path, OBJECT_MANAGER))
+
+  async def _get_agent_manager_interface(self, path: str) -> _AgentManagerInterface:
+    return cast(_AgentManagerInterface, await self._get_interface(path, AGENT_MANAGER_IFACE))
 
   async def _subscribe_to_signals(self) -> None:
     if self._bus is None or self._event_broker is None:
@@ -565,7 +678,7 @@ class BlueZManager:
     try:
       agent = PairingAgent(self._event_broker)
       self._bus.export(AGENT_PATH, agent)
-      agent_manager = await self._get_interface(AGENT_MANAGER_PATH, AGENT_MANAGER_IFACE)
+      agent_manager = await self._get_agent_manager_interface(AGENT_MANAGER_PATH)
       await agent_manager.call_register_agent(AGENT_PATH, self._agent_capability)
       await agent_manager.call_request_default_agent(AGENT_PATH)
       self._pairing_agent = agent
@@ -579,7 +692,7 @@ class BlueZManager:
       return
 
     try:
-      agent_manager = await self._get_interface(AGENT_MANAGER_PATH, AGENT_MANAGER_IFACE)
+      agent_manager = await self._get_agent_manager_interface(AGENT_MANAGER_PATH)
       await agent_manager.call_unregister_agent(AGENT_PATH)
     except Exception as exc:
       logger.warning("Bluetooth pairing agent unregistration failed: %s", exc)

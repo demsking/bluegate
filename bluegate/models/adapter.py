@@ -35,6 +35,7 @@ class Adapter(BaseModel):
 class AdapterPatch(BaseModel):
   model_config = ConfigDict(extra="forbid")
 
+  alias: str | None = Field(default=None, description="Set adapter alias as reported by BlueZ.")
   powered: bool | None = Field(default=None, description="Set adapter power state.")
   discoverable: bool | None = Field(default=None, description="Set adapter discoverable state.")
   pairable: bool | None = Field(default=None, description="Set adapter pairable state.")

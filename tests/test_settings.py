@@ -33,3 +33,13 @@ def test_cors_allowed_origins_accepts_comma_separated_values() -> None:
 def test_cors_allowed_origins_accepts_json_array() -> None:
   settings = Settings(cors_allowed_origins='["http://localhost:8080", "https://ui.example.com"]')
   assert settings.cors_allowed_origins == ["http://localhost:8080", "https://ui.example.com"]
+
+
+def test_cors_allowed_origins_defaults_to_disabled() -> None:
+  settings = Settings()
+  assert settings.cors_allowed_origins == []
+
+
+def test_cors_allowed_origins_empty_string_disables_cors() -> None:
+  settings = Settings(cors_allowed_origins="   ")
+  assert settings.cors_allowed_origins == []

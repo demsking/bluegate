@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+from collections.abc import Awaitable
+from collections.abc import Callable
+
+from dbus_next.errors import DBusError
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import status
@@ -33,6 +37,87 @@ API_TAG_METADATA = {
 }
 
 router = APIRouter(prefix="/adapters", tags=[API_TAG_METADATA["name"]])
+
+
+def _dbus_diagnostics(exc: DBusError) -> dict[str, str | bool]:
+  message = str(exc)
+  normalized_message = message.lower()
+
+  if exc.type == "org.bluez.Error.InProgress":
+    return {
+      "reason": "operation_in_progress",
+      "retryable": True,
+      "hint": "A previous Bluetooth operation is still running; retry after a short delay.",
+    }
+
+  if exc.type == "org.bluez.Error.NotReady":
+    return {
+      "reason": "adapter_not_ready",
+      "retryable": True,
+      "hint": "The Bluetooth adapter is not ready; verify it is powered and not blocked by rfkill.",
+    }
+
+  if exc.type == "org.bluez.Error.NotAvailable":
+    return {
+      "reason": "adapter_unavailable",
+      "retryable": False,
+      "hint": "The adapter is unavailable on this host; check controller presence and bluetoothd status.",
+    }
+
+  if exc.type == "org.bluez.Error.NotSupported":
+    return {
+      "reason": "operation_not_supported",
+      "retryable": False,
+      "hint": "The adapter does not support this operation.",
+    }
+
+  if "br-connection-create-socket" in normalized_message:
+    return {
+      "reason": "socket_creation_failed",
+      "retryable": True,
+      "hint": "BlueZ failed to create a BR/EDR connection socket on this node; check bluetoothd logs, kernel Bluetooth modules, firmware, and rfkill state.",
+    }
+
+  if exc.type == "org.bluez.Error.Failed":
+    return {
+      "reason": "operation_failed",
+      "retryable": False,
+      "hint": "BlueZ reported a generic failure; consult bluetoothd journal logs around the same timestamp for root cause.",
+    }
+
+  return {
+    "reason": "dbus_error",
+    "retryable": False,
+    "hint": "Unexpected D-Bus error from BlueZ.",
+  }
+
+
+async def _call_discovery(operation: str, adapter_id: str, action: Callable[[], Awaitable[bool]]) -> bool:
+  try:
+    return await action()
+  except DBusError as exc:
+    if operation == "start" and exc.type == "org.bluez.Error.InProgress":
+      return True
+
+    if operation == "stop" and exc.type == "org.bluez.Error.Failed" and "no discovery started" in str(exc).lower():
+      return True
+
+    diagnostics = _dbus_diagnostics(exc)
+
+    raise ApiException(
+      code="BLUETOOTH_ADAPTER_SCAN_FAILED",
+      message="The Bluetooth discovery operation failed.",
+      status_code=status.HTTP_502_BAD_GATEWAY,
+      details={
+        "adapter_id": adapter_id,
+        "operation": operation,
+        "dbus_error": exc.type,
+        "dbus_message": str(exc),
+        "reason": diagnostics["reason"],
+        "retryable": diagnostics["retryable"],
+        "hint": diagnostics["hint"],
+      },
+    ) from exc
 
 
 @router.get("/", summary="List adapters")
@@ -80,7 +165,7 @@ async def start_scan(
   manager: BluetoothManager = Depends(get_bluetooth_manager),
   broker: BluetoothEventBroker = Depends(get_event_broker),
 ) -> dict[str, bool]:
-  success = await manager.start_discovery(adapter_id)
+  success = await _call_discovery("start", adapter_id, lambda: manager.start_discovery(adapter_id))
   if not success:
     raise ApiException(
       code="BLUETOOTH_ADAPTER_NOT_FOUND",
@@ -99,7 +184,7 @@ async def stop_scan(
   manager: BluetoothManager = Depends(get_bluetooth_manager),
   broker: BluetoothEventBroker = Depends(get_event_broker),
 ) -> dict[str, bool]:
-  success = await manager.stop_discovery(adapter_id)
+  success = await _call_discovery("stop", adapter_id, lambda: manager.stop_discovery(adapter_id))
   if not success:
     raise ApiException(
       code="BLUETOOTH_ADAPTER_NOT_FOUND",

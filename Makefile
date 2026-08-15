@@ -8,11 +8,12 @@ BUILD_DIR := build
 BUILDER_NAME := $(APP_NAME)
 
 IMAGE_NAME := demsking/$(APP_NAME)
+IMAGE_DASHBOARD_NAME := demsking/$(APP_NAME)-dashboard
 IMAGE_PLATFORMS := linux/amd64,linux/arm64
 IMAGE_REVISION := $(shell git rev-parse HEAD)
 IMAGE_CREATED := $(shell date --utc --iso-8601=seconds)
 
-.PHONY: install tests clean package pypi image bump patch minor major alpha beta rc release publish check-clean logs
+.PHONY: install tests clean package pypi image dashboard-image bump patch minor major alpha beta rc release publish check-clean logs
 
 shell:
 	tmuxinator
@@ -87,7 +88,7 @@ package: clean-dist
 pypi: package
 	devbox run twine upload "$(DIST_DIR)"/*
 
-image:
+server-image:
 	@docker buildx inspect "$(BUILDER_NAME)" >/dev/null 2>&1 || \
 	  docker buildx create --name "$(BUILDER_NAME)" --bootstrap
 
@@ -115,8 +116,32 @@ image-test:
 	  --progress plain \
 	  --tag $(IMAGE_NAME):test
 
+dashboard-image:
+	docker buildx use "$(BUILDER_NAME)"
+	docker buildx build dashboard \
+	  --platform "$(IMAGE_PLATFORMS)" \
+	  --push \
+	  --progress plain \
+	  --tag "$(IMAGE_DASHBOARD_NAME):$(APP_VERSION)" \
+	  --tag "$(IMAGE_DASHBOARD_NAME):latest" \
+	  --label "org.opencontainers.image.title=$(APP_NAME)" \
+	  --label "org.opencontainers.image.description=$(APP_DESCRIPTION)" \
+	  --label "org.opencontainers.image.version=$(APP_VERSION)" \
+	  --label "org.opencontainers.image.revision=$(IMAGE_REVISION)" \
+	  --label "org.opencontainers.image.authors=Sébastien Demanou <demsking@gmail.com>" \
+	  --label "org.opencontainers.image.created=$(IMAGE_CREATED)" \
+	  --label "org.opencontainers.image.vendor=Sébastien Demanou" \
+	  --label "org.opencontainers.image.licenses=$(APP_LICENSE)"
+
+image: server-image dashboard-image
+
 live: image-test
-	docker run -it --rm --env-file .env.example -v ~/.local/share/$(APP_NAME):/oremi/data --network host $(IMAGE_NAME):test
+	docker run -it --rm \
+	  --env-file .env.example \
+	  -e BLUEGATE_DBUS_SYSTEM_BUS=unix:path=/run/dbus/system_bus_socket \
+	  -v /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro \
+	  --network host \
+	  $(IMAGE_NAME):test
 
 check-clean:
 	@test -z "$$(git status --porcelain)" || (echo "Working tree is not clean" && exit 1)

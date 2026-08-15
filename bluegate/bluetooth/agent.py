@@ -28,9 +28,10 @@
 # ==============================================================================
 import asyncio
 import logging
+from typing import TypeAlias
 from uuid import uuid4
 
-from dbus_next import DBusError
+from dbus_next.errors import DBusError
 from dbus_next.service import method
 from dbus_next.service import ServiceInterface
 
@@ -44,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 AGENT_PATH = "/bluegate/agent"
 AGENT_INTERFACE = "org.bluez.Agent1"
+
+# Type aliases used only to satisfy static type checkers for dbus-next
+# D-Bus signature annotations ("o", "s", "u", "q").
+o: TypeAlias = str
+s: TypeAlias = str
+u: TypeAlias = int
+q: TypeAlias = int
 
 _PairingResult = str | int | bool | None
 
@@ -126,31 +134,31 @@ class PairingAgent(ServiceInterface):
       await self._event_broker.publish(PairingRequestResolvedEvent(request_id=request_id))
 
   @method()
-  async def RequestPinCode(self, device: "o") -> "s":  # noqa: F821
+  async def RequestPinCode(self, device: "o") -> "s":
     return await self._on_request_pin_code(device)
 
   @method()
-  def DisplayPinCode(self, device: "o", pincode: "s") -> None:  # noqa: F821
+  def DisplayPinCode(self, device: "o", pincode: "s") -> None:
     logger.info("BlueZ requested display of a PIN code for device_id=%s", _device_id_from_path(device))
 
   @method()
-  async def RequestPasskey(self, device: "o") -> "u":  # noqa: F821
+  async def RequestPasskey(self, device: "o") -> "u":
     return await self._on_request_passkey(device)
 
   @method()
-  def DisplayPasskey(self, device: "o", passkey: "u", entered: "q") -> None:  # noqa: F821
+  def DisplayPasskey(self, device: "o", passkey: "u", entered: "q") -> None:
     logger.info("BlueZ requested display of a passkey for device_id=%s", _device_id_from_path(device))
 
   @method()
-  async def RequestConfirmation(self, device: "o", passkey: "u") -> None:  # noqa: F821
+  async def RequestConfirmation(self, device: "o", passkey: "u") -> None:
     await self._on_request_confirmation(device, passkey)
 
   @method()
-  async def RequestAuthorization(self, device: "o") -> None:  # noqa: F821
+  async def RequestAuthorization(self, device: "o") -> None:
     await self._on_request_authorization(device)
 
   @method()
-  async def AuthorizeService(self, device: "o", uuid: "s") -> None:  # noqa: F821
+  async def AuthorizeService(self, device: "o", uuid: "s") -> None:
     await self._on_authorize_service(device, uuid)
 
   @method()

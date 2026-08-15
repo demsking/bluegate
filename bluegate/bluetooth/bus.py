@@ -15,8 +15,8 @@
 from collections.abc import Awaitable
 from collections.abc import Callable
 
-from dbus_next import BusType
-from dbus_next.aio import MessageBus
+from dbus_next.aio.message_bus import MessageBus
+from dbus_next.constants import BusType
 
 
 class SystemBusClient:
@@ -28,7 +28,10 @@ class SystemBusClient:
     if self._bus is not None:
       return self._bus
 
-    bus = MessageBus(bus_type=BusType.SYSTEM, bus_address=self._bus_address)
+    if self._bus_address is None:
+      bus = MessageBus(bus_type=BusType.SYSTEM)
+    else:
+      bus = MessageBus(bus_type=BusType.SYSTEM, bus_address=self._bus_address)
     self._bus = await bus.connect()
 
     return self._bus

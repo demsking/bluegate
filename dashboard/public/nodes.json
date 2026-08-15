@@ -1,0 +1,10 @@
+[
+  {
+    "id": "local",
+    "name": "Local node"
+  },
+  {
+    "id": "bamenda",
+    "name": "Bamenda node"
+  }
+]

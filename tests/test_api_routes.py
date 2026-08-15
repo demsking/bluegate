@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+from dbus_next import DBusError
 from fastapi.testclient import TestClient
 
 from bluegate.core.app import create_app
@@ -19,12 +20,16 @@ from bluegate.core.settings import Settings
 from bluegate.models.adapter import Adapter
 from bluegate.models.adapter import AdapterPatch
 from bluegate.models.device import Device
+from bluegate.models.device import DevicePatch
 
 
 class FakeBluetoothManager:
   def __init__(self) -> None:
     self.dbus_connected = True
     self.bluez_available = True
+    self.fail_start_discovery: DBusError | None = None
+    self.fail_stop_discovery: DBusError | None = None
+    self.fail_connect_device: DBusError | None = None
     self._adapter = Adapter(
       id="hci0",
       object_path="/org/bluez/hci0",
@@ -49,6 +54,7 @@ class FakeBluetoothManager:
       device_class=0,
       appearance=0,
       rssi=-55,
+      battery_level=87,
       tx_power=4,
       paired=False,
       trusted=False,
@@ -81,9 +87,15 @@ class FakeBluetoothManager:
     return self._adapter
 
   async def start_discovery(self, adapter_id: str) -> bool:
+    if self.fail_start_discovery is not None:
+      raise self.fail_start_discovery
+
     return adapter_id == self._adapter.id
 
   async def stop_discovery(self, adapter_id: str) -> bool:
+    if self.fail_stop_discovery is not None:
+      raise self.fail_stop_discovery
+
     return adapter_id == self._adapter.id
 
   async def list_devices(self) -> list[Device]:
@@ -95,10 +107,21 @@ class FakeBluetoothManager:
 
     return None
 
+  async def patch_device(self, device_id: str, patch: DevicePatch) -> Device | None:
+    if device_id != self._device.id:
+      return None
+
+    updates = patch.model_dump(exclude_none=True)
+    self._device = self._device.model_copy(update=updates)
+    return self._device
+
   async def pair_device(self, device_id: str) -> bool:
     return device_id == self._device.id
 
   async def connect_device(self, device_id: str) -> bool:
+    if self.fail_connect_device is not None:
+      raise self.fail_connect_device
+
     return device_id == self._device.id
 
   async def disconnect_device(self, device_id: str) -> bool:
@@ -112,6 +135,9 @@ class FakeBluetoothManager:
     return True
 
   async def remove_device(self, device_id: str) -> bool:
+    return device_id == self._device.id
+
+  async def unpair_device(self, device_id: str) -> bool:
     return device_id == self._device.id
 
 
@@ -140,10 +166,19 @@ def test_adapters_and_devices_routes(monkeypatch) -> None:
     devices_response = client.get("/api/devices/")
     assert devices_response.status_code == 200
     assert devices_response.json()[0]["id"] == "11:22:33:44:55:66"
+    assert devices_response.json()[0]["battery_level"] == 87
+
+    rename_response = client.patch("/api/devices/11:22:33:44:55:66", json={"alias": "My Headset"})
+    assert rename_response.status_code == 200
+    assert rename_response.json()["alias"] == "My Headset"
 
     trust_response = client.post("/api/devices/11:22:33:44:55:66/trust")
     assert trust_response.status_code == 202
     assert trust_response.json()["trusted"] is True
+
+    unpair_response = client.post("/api/devices/11:22:33:44:55:66/unpair")
+    assert unpair_response.status_code == 202
+    assert unpair_response.json()["unpaired"] is True
 
 
 def test_not_found_errors_are_structured(monkeypatch) -> None:
@@ -164,6 +199,71 @@ def test_not_found_errors_are_structured(monkeypatch) -> None:
   assert payload["code"] == "BLUETOOTH_ADAPTER_NOT_FOUND"
   assert "message" in payload
   assert "details" in payload
+
+
+def test_scan_dbus_errors_are_handled(monkeypatch) -> None:
+  fake_manager = FakeBluetoothManager()
+
+  def _factory(*_args: object, **_kwargs: object) -> FakeBluetoothManager:
+    return fake_manager
+
+  monkeypatch.setattr("bluegate.core.app.create_bluetooth_manager", _factory)
+
+  app = create_app(Settings())
+
+  fake_manager.fail_start_discovery = DBusError("org.bluez.Error.InProgress", "Operation already in progress")
+  with TestClient(app) as client:
+    response = client.post("/api/adapters/hci0/scan")
+
+  assert response.status_code == 202
+  assert response.json()["started"] is True
+
+  fake_manager.fail_start_discovery = DBusError("org.bluez.Error.Failed", "StartDiscovery failed")
+  with TestClient(app) as client:
+    response = client.post("/api/adapters/hci0/scan")
+
+  assert response.status_code == 502
+  payload = response.json()
+  assert payload["code"] == "BLUETOOTH_ADAPTER_SCAN_FAILED"
+  assert payload["details"]["operation"] == "start"
+  assert payload["details"]["dbus_error"] == "org.bluez.Error.Failed"
+  assert payload["details"]["dbus_message"] == "StartDiscovery failed"
+  assert payload["details"]["reason"] == "operation_failed"
+  assert payload["details"]["retryable"] is False
+  assert "generic failure" in payload["details"]["hint"]
+
+  fake_manager.fail_start_discovery = None
+  fake_manager.fail_stop_discovery = DBusError("org.bluez.Error.Failed", "No discovery started")
+  with TestClient(app) as client:
+    response = client.delete("/api/adapters/hci0/scan")
+
+  assert response.status_code == 200
+  assert response.json()["stopped"] is True
+
+
+def test_device_operation_dbus_errors_include_diagnostics(monkeypatch) -> None:
+  fake_manager = FakeBluetoothManager()
+
+  def _factory(*_args: object, **_kwargs: object) -> FakeBluetoothManager:
+    return fake_manager
+
+  monkeypatch.setattr("bluegate.core.app.create_bluetooth_manager", _factory)
+
+  app = create_app(Settings())
+
+  fake_manager.fail_connect_device = DBusError("org.bluez.Error.Failed", "br-connection-create-socket")
+  with TestClient(app) as client:
+    response = client.post("/api/devices/11:22:33:44:55:66/connect")
+
+  assert response.status_code == 502
+  payload = response.json()
+  assert payload["code"] == "BLUETOOTH_DEVICE_OPERATION_FAILED"
+  assert payload["details"]["action"] == "connect"
+  assert payload["details"]["dbus_error"] == "org.bluez.Error.Failed"
+  assert payload["details"]["dbus_message"] == "br-connection-create-socket"
+  assert payload["details"]["reason"] == "socket_creation_failed"
+  assert payload["details"]["retryable"] is True
+  assert "BR/EDR connection socket" in payload["details"]["hint"]
 
 
 def test_websocket_receives_device_change_event(monkeypatch) -> None:

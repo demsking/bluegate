@@ -22,7 +22,7 @@ def test_health_endpoint_returns_degraded_when_bluez_unavailable() -> None:
   app = create_app(Settings())
 
   with TestClient(app) as client:
-    response = client.get("/api/health/")
+    response = client.get("/health/")
 
   assert response.status_code == 200
   payload = response.json()

@@ -31,6 +31,7 @@ class Device(BaseModel):
   device_class: int | None = Field(default=None, description="Bluetooth class for classic devices.")
   appearance: int | None = Field(default=None, description="BLE appearance value.")
   rssi: int | None = Field(default=None, description="Most recent RSSI value in dBm.")
+  battery_level: int | None = Field(default=None, ge=0, le=100, description="Battery level percentage when exposed by BlueZ.")
   tx_power: int | None = Field(default=None, description="Most recent TxPower value in dBm.")
   paired: bool = Field(..., description="Whether the device is paired.")
   trusted: bool = Field(..., description="Whether the device is trusted.")
@@ -38,3 +39,9 @@ class Device(BaseModel):
   blocked: bool = Field(..., description="Whether the device is blocked.")
   services_resolved: bool = Field(..., description="Whether GATT/services were resolved.")
   uuids: list[str] = Field(default_factory=list, description="Advertised UUIDs.")
+
+
+class DevicePatch(BaseModel):
+  model_config = ConfigDict(extra="forbid")
+
+  alias: str | None = Field(default=None, description="Set remote device alias as reported by BlueZ.")

@@ -120,13 +120,16 @@ def create_app(settings: Settings) -> FastAPI:
     ],
   )
 
-  app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allowed_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-  )
+  if len(settings.cors_allowed_origins) > 0:
+    app.add_middleware(
+      CORSMiddleware,
+      allow_origins=settings.cors_allowed_origins,
+      allow_credentials=False,
+      allow_methods=["*"],
+      allow_headers=["*"],
+    )
+  else:
+    logger.info("CORS middleware disabled: no allowed origins configured")
 
   @app.exception_handler(ApiException)
   async def api_exception_handler(_: Request, exc: ApiException) -> JSONResponse:
@@ -144,13 +147,15 @@ def create_app(settings: Settings) -> FastAPI:
     return HTMLResponse(status_code=307, headers={"Location": prefix + docs.router.prefix + "/"})
 
   prefix = "" if settings.api_prefix == "/" else settings.api_prefix
+  api_prefix = f"{prefix}/api" if prefix else "/api"
 
   app.include_router(health.router, prefix=prefix)
-  app.include_router(adapters.router, prefix=prefix)
-  app.include_router(devices.router, prefix=prefix)
-  app.include_router(gatt.router, prefix=prefix)
-  app.include_router(pairing.router, prefix=prefix)
+  app.include_router(adapters.router, prefix=api_prefix)
+  app.include_router(devices.router, prefix=api_prefix)
+  app.include_router(gatt.router, prefix=api_prefix)
+  app.include_router(pairing.router, prefix=api_prefix)
   app.include_router(docs.router, prefix=prefix)
+  app.include_router(websocket.router, prefix=api_prefix)
   app.include_router(websocket.router, prefix=prefix)
 
   return app

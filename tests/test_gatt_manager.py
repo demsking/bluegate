@@ -29,6 +29,7 @@
 import asyncio
 from contextlib import aclosing
 
+from dbus_next import DBusError
 from dbus_next.signature import Variant
 
 from bluegate.bluetooth.bus import SystemBusClient
@@ -180,6 +181,25 @@ def test_unknown_service_returns_empty_lists(monkeypatch) -> None:
 
     assert await manager.get_service("11:22:33:44:55:66", "service9999") is None
     assert await manager.list_characteristics("11:22:33:44:55:66", "service9999") == []
+
+  asyncio.run(_run())
+
+
+def test_list_adapters_returns_empty_when_bluez_is_missing(monkeypatch) -> None:
+  async def _run() -> None:
+    manager = BlueZManager(SystemBusClient())
+    manager._bluez_available = True
+
+    async def fake_get_managed_objects() -> dict[str, dict[str, dict[str, Variant]]]:
+      raise DBusError(
+        "org.freedesktop.DBus.Error.ServiceUnknown",
+        "The name org.bluez was not provided by any .service files",
+      )
+
+    monkeypatch.setattr(manager, "_get_managed_objects", fake_get_managed_objects)
+
+    assert await manager.list_adapters() == []
+    assert manager.bluez_available is False
 
   asyncio.run(_run())
 

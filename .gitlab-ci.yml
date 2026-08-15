@@ -37,6 +37,7 @@ pages:
     - mkdir -p public/static/
     - mv htdocs/* public/static/
     - python scripts/generate-docs-files.py
+    - cp ui/public/favicon.png htdocs/
     - cp htdocs/* public/
     - ls -lah public/
     - echo "The documentation site will be deployed to $CI_PAGES_URL"

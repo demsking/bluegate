@@ -62,7 +62,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 indent-width = 2
 
 [tool.ruff.format]
@@ -77,8 +77,13 @@ strict = true
 python_version = "3.11"
 
 [[tool.mypy.overrides]]
-module = ["mcp.*"]
+module = ["dbus_next.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-disable_error_code = ["untyped-decorator"]
+module = ["bluegate.bluetooth.agent"]
+disable_error_code = ["untyped-decorator", "no-untyped-call"]
+
+[[tool.mypy.overrides]]
+module = ["bluegate.bluetooth.bus"]
+disable_error_code = ["no-untyped-call"]

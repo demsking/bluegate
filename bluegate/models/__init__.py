@@ -15,6 +15,7 @@
 from bluegate.models.adapter import Adapter
 from bluegate.models.adapter import AdapterPatch
 from bluegate.models.device import Device
+from bluegate.models.device import DevicePatch
 from bluegate.models.error import ApiError
 from bluegate.models.events import AdapterChangedEvent
 from bluegate.models.events import BluetoothEvent
@@ -38,6 +39,7 @@ __all__ = [
   "DeviceConnectedEvent",
   "DeviceDisconnectedEvent",
   "DevicePairedEvent",
+  "DevicePatch",
   "DeviceRemovedEvent",
   "DiscoveryStartedEvent",
   "DiscoveryStoppedEvent",

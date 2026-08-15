@@ -12,7 +12,9 @@ services:
       BLUEGATE_SERVER_HOST: 0.0.0.0
       BLUEGATE_SERVER_PORT: 8765
       BLUEGATE_API_PREFIX: /
-      BLUEGATE_CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:5173
+      BLUEGATE_DBUS_SYSTEM_BUS: unix:path=/run/dbus/system_bus_socket
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
 
   bluegate-node-b:
     build:
@@ -25,7 +27,9 @@ services:
       BLUEGATE_SERVER_HOST: 0.0.0.0
       BLUEGATE_SERVER_PORT: 8765
       BLUEGATE_API_PREFIX: /
-      BLUEGATE_CORS_ALLOWED_ORIGINS: http://localhost:8080,http://localhost:5173
+      BLUEGATE_DBUS_SYSTEM_BUS: unix:path=/run/dbus/system_bus_socket
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
 
   ui:
     build:
@@ -38,8 +42,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      UI_NODES_JSON: '[{"id":"node-a","name":"Node A","apiBaseUrl":"http://localhost:8765"},{"id":"node-b","name":"Node B","apiBaseUrl":"http://localhost:8766"}]'
-      UI_DEFAULT_NODE_ID: node-a
+      BLUEGATE_NODES_JSON: '[{"id":"node-a","name":"Node A","server":"http://bluegate-node-a:8765"},{"id":"node-b","name":"Node B","server":"http://bluegate-node-b:8765"}]'
 
   inspector:
     image: ghcr.io/modelcontextprotocol/inspector:0.22.0
