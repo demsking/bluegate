@@ -15,32 +15,8 @@ IMAGE_CREATED := $(shell date --utc --iso-8601=seconds)
 
 .PHONY: install tests clean package pypi image dashboard-image bump patch minor major alpha beta rc release publish check-clean logs
 
-shell:
-	tmuxinator
-
 stop:
 	tmux kill-session -t $(APP_NAME)
-
-up: pull
-	docker compose up -d --remove-orphans
-
-ps:
-	docker compose ps
-
-logs:
-	docker compose logs -f
-
-pull:
-	docker compose pull
-
-restart:
-	docker compose restart
-
-down:
-	docker compose down
-
-stats:
-	docker compose stats
 
 install:
 	rm -rf .venv

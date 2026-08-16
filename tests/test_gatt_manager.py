@@ -29,7 +29,7 @@
 import asyncio
 from contextlib import aclosing
 
-from dbus_next import DBusError
+from dbus_next.errors import DBusError
 from dbus_next.signature import Variant
 
 from bluegate.bluetooth.bus import SystemBusClient

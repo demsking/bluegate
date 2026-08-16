@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-from dbus_next import DBusError
+from dbus_next.errors import DBusError
 from fastapi.testclient import TestClient
 
 from bluegate.core.app import create_app

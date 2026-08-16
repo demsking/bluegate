@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+from typing import cast
+
 from fastapi import Request
+from fastapi import WebSocket
 
 from bluegate.api.errors import ApiException
 from bluegate.bluetooth.agent import PairingAgent
@@ -21,7 +24,8 @@ from bluegate.bluetooth.manager import BluetoothManager
 
 
 def get_bluetooth_manager(request: Request) -> BluetoothManager:
-  manager = getattr(request.app.state, "bluetooth_manager", None)
+  manager = cast(BluetoothManager | None, getattr(request.app.state, "bluetooth_manager", None))
+
   if manager is None:
     raise ApiException(
       code="BLUETOOTH_MANAGER_UNAVAILABLE",
@@ -32,8 +36,9 @@ def get_bluetooth_manager(request: Request) -> BluetoothManager:
   return manager
 
 
-def get_event_broker(request: Request) -> BluetoothEventBroker:
-  broker = getattr(request.app.state, "event_broker", None)
+def _require_event_broker(request: Request | WebSocket) -> BluetoothEventBroker:
+  broker = cast(BluetoothEventBroker | None, getattr(request.app.state, "event_broker", None))
+
   if broker is None:
     raise ApiException(
       code="BLUETOOTH_EVENT_BROKER_UNAVAILABLE",
@@ -44,8 +49,16 @@ def get_event_broker(request: Request) -> BluetoothEventBroker:
   return broker
 
 
+def get_event_broker(request: Request) -> BluetoothEventBroker:
+  return _require_event_broker(request)
+
+
+def get_websocket_event_broker(websocket: WebSocket) -> BluetoothEventBroker:
+  return _require_event_broker(websocket)
+
+
 def get_pairing_agent(request: Request) -> PairingAgent:
-  agent = getattr(request.app.state, "pairing_agent", None)
+  agent = cast(PairingAgent | None, getattr(request.app.state, "pairing_agent", None))
   if agent is None:
     raise ApiException(
       code="BLUETOOTH_AGENT_UNAVAILABLE",

@@ -19,12 +19,18 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 
+type ServerStatus = Literal["healthy", "degraded"]
+type ApplicationStatus = Literal["ready"]
+type DBusStatus = Literal["connected", "disconnected"]
+type BlueZStatus = Literal["available", "unavailable"]
+
+
 class HealthStatus(BaseModel):
   model_config = ConfigDict(extra="forbid")
 
-  status: Literal["healthy", "degraded"] = Field(..., description="Global health state.")
-  application: Literal["ready"] = Field(default="ready", description="Application process state.")
-  dbus: Literal["connected", "disconnected"] = Field(..., description="D-Bus connection state.")
-  bluez: Literal["available", "unavailable"] = Field(..., description="BlueZ availability state.")
+  status: ServerStatus = Field(..., description="Global health state.")
+  application: ApplicationStatus = Field(default="ready", description="Application process state.")
+  dbus: DBusStatus = Field(..., description="D-Bus connection state.")
+  bluez: BlueZStatus = Field(..., description="BlueZ availability state.")
   adapters: int = Field(..., ge=0, description="Number of discovered adapters.")
   version: str = Field(..., description="Application version.")

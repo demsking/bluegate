@@ -16,7 +16,10 @@ from fastapi import APIRouter
 from fastapi import Request
 
 from bluegate.core.package import APP_VERSION
+from bluegate.models.health import BlueZStatus
+from bluegate.models.health import DBusStatus
 from bluegate.models.health import HealthStatus
+from bluegate.models.health import ServerStatus
 
 
 API_TAG_METADATA = {
@@ -69,9 +72,9 @@ async def health(request: Request) -> HealthStatus:
     )
 
   adapters = await manager.list_adapters() if manager.bluez_available else []
-  dbus_status = "connected" if manager.dbus_connected else "disconnected"
-  bluez_status = "available" if manager.bluez_available else "unavailable"
-  global_status = "healthy" if dbus_status == "connected" and bluez_status == "available" else "degraded"
+  dbus_status: DBusStatus = "connected" if manager.dbus_connected else "disconnected"
+  bluez_status: BlueZStatus = "available" if manager.bluez_available else "unavailable"
+  global_status: ServerStatus = "healthy" if dbus_status == "connected" and bluez_status == "available" else "degraded"
 
   return HealthStatus(
     status=global_status,

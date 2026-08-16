@@ -18,7 +18,7 @@ from fastapi import APIRouter
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 
-from bluegate.api.dependencies import get_event_broker
+from bluegate.api.dependencies import get_websocket_event_broker
 
 API_TAG_METADATA = {
   "name": "Bluetooth Events",
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/ws", tags=[API_TAG_METADATA["name"]])
 async def websocket_events(websocket: WebSocket) -> None:
   await websocket.accept()
 
-  broker = get_event_broker(websocket)
+  broker = get_websocket_event_broker(websocket)
   heartbeat = int(getattr(websocket.app.state, "websocket_heartbeat", 30))
 
   try:

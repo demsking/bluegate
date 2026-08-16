@@ -30,7 +30,7 @@ import asyncio
 from contextlib import aclosing
 
 import pytest
-from dbus_next import DBusError
+from dbus_next.errors import DBusError
 
 from bluegate.bluetooth.agent import PairingAgent
 from bluegate.bluetooth.events import BluetoothEventBroker

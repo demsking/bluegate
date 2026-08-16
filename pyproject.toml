@@ -17,11 +17,10 @@ keywords = [
 classifiers = [
   "Environment :: Console",
   "Intended Audience :: Developers",
-  "Natural Language :: English",
-  "Natural Language :: French",
   "Topic :: Software Development :: Libraries :: Python Modules",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
@@ -74,7 +73,7 @@ ignore = ["B008", "I001"]
 
 [tool.mypy]
 strict = true
-python_version = "3.11"
+python_version = "3.12"
 
 [[tool.mypy.overrides]]
 module = ["dbus_next.*"]
