@@ -23,6 +23,16 @@ BlueGate is distributed as a multi-platform Docker image for
 The following sections describe the available Docker image, persistent storage
 requirements, and example deployments using both Docker and Docker Compose.
 
+### Prerequisites
+
+Before installation or Docker deployment:
+
+1. Ensure `dbus` is running on your host (required for D-Bus communication
+   with Bluetooth agents).
+2. If deploying in an isolated environment without a native daemon, ensure the
+   system socket (`/run/dbus/system_bus_socket`) can be mounted into the
+   container root directory as specified below.
+
 ### Command Line
 
 Before installing BlueGate from PyPI, ensure the following requirements are met:
@@ -61,17 +71,27 @@ configured environment variables.
 
 ### Docker Image
 
+**BlueGate Backend Image**
+
 The [`demsking/bluegate`](https://hub.docker.com/r/demsking/bluegate)
 Docker image is officially available on Docker Hub and supports both
 `linux/amd64` and `linux/arm64` platforms.
 
 The container exposes port `8765` for the BlueGate service.
 
+**BlueGate Dashboard Image**
+
+BlueGate also ships with a standalone web dashboard in the
+[`demsking/bluegate-dashboard`](https://hub.docker.com/r/demsking/bluegate-dashboard)
+image. The dashboard is meant to sit in front of one or more BlueGate nodes and
+uses same-origin proxy paths such as `/node-1/api/...` and `/node-1/api/ws/`.
+
+The dashboard container exposes port `8764`.
+
 ### Deploy with Docker
 
-Use the official Docker image
-[`demsking/bluegate`](https://hub.docker.com/r/demsking/bluegate)
-to run BlueGate:
+Use the official Docker image [`demsking/bluegate`](https://hub.docker.com/r/demsking/bluegate)
+to run the BlueGate backend:
 
 ```sh
 docker run -d \
@@ -87,24 +107,43 @@ Replace `<path_to_env_file>` with the path to your
 [environment variables](#configuration) file containing the desired
 configuration.
 
+To run the dashboard alongside one or more BlueGate nodes, use the dashboard
+image and provide `BLUEGATE_NODES_JSON` at startup. The container generates a
+public `/nodes.json` file that only exposes the node `id` and `name` values.
+For example:
+
+```sh
+docker run -d \
+  --name bluegate-dashboard \
+  -e 'BLUEGATE_NODES_JSON=[{"id":"node-1","name":"My Node","server":"http://bluegate:8765"}]' \
+  -p 8764:8764 \
+  demsking/bluegate-dashboard
+```
+
 ### Deploy with Docker Compose
 
-Create a `compose.yaml` file:
+Create a `compose.yaml` file when you want to run the backend and dashboard
+together:
 
 ```yaml
 services:
   bluegate:
     image: demsking/bluegate:latest
-    container_name: bluegate
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       BLUEGATE_DBUS_SYSTEM_BUS: unix:path=/run/dbus/system_bus_socket
     volumes:
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
     ports:
       - "8765:8765"
+
+  dashboard:
+    image: demsking/bluegate-dashboard:latest
+    restart: unless-stopped
+    environment:
+      - BLUEGATE_NODES_JSON=[{"id":"node-1","name":"My Node","server":"http://bluegate:8765"}]
+    ports:
+      - "8764:8764"
 ```
 
 Start the services with:
@@ -113,7 +152,8 @@ Start the services with:
 docker compose up -d
 ```
 
-BlueGate will be available on `http://localhost:8765`.
+After startup, the backend is available on `http://localhost:8765` and the
+dashboard on `http://localhost:8764`.
 
 To enable Bluetooth features from a container, ensure the host is running
 both `dbus` and `bluetoothd`, and that the system bus socket is mounted into
