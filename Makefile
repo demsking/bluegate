@@ -65,9 +65,6 @@ pypi: package
 	devbox run twine upload "$(DIST_DIR)"/*
 
 server-image:
-	@docker buildx inspect "$(BUILDER_NAME)" >/dev/null 2>&1 || \
-	  docker buildx create --name "$(BUILDER_NAME)" --bootstrap
-
 	@echo "Building $(IMAGE_NAME):$(APP_VERSION)"
 	devbox run uv lock --locked
 	docker buildx use "$(BUILDER_NAME)"
@@ -86,7 +83,7 @@ server-image:
 	  --label "org.opencontainers.image.vendor=Sébastien Demanou" \
 	  --label "org.opencontainers.image.licenses=$(APP_LICENSE)"
 
-image-test:
+server-images-test:
 	uv lock
 	docker build . \
 	  --progress plain \
@@ -109,9 +106,21 @@ dashboard-image:
 	  --label "org.opencontainers.image.vendor=Sébastien Demanou" \
 	  --label "org.opencontainers.image.licenses=$(APP_LICENSE)"
 
-image: server-image dashboard-image
+dashboard-images-test:
+	docker build dashboard \
+	  --progress plain \
+	  --tag $(IMAGE_DASHBOARD_NAME):test
 
-live: image-test
+images:
+	docker buildx inspect "$(BUILDER_NAME)" >/dev/null 2>&1 || \
+	  docker buildx create --name "$(BUILDER_NAME)" --bootstrap
+
+	$(MAKE) -j2 server-image dashboard-image
+
+images-test:
+	$(MAKE) -j2 server-images-test dashboard-images-test
+
+live: images-test
 	docker run -it --rm \
 	  --env-file .env.example \
 	  -e BLUEGATE_DBUS_SYSTEM_BUS=unix:path=/run/dbus/system_bus_socket \
@@ -159,8 +168,8 @@ release: check-clean
 	git commit -m "chore(release): bump version to $(shell uv version --short)"
 	git tag --annotate "v$(shell uv version --short)" --message "Release v$(shell uv version --short)"
 
-publish: check-clean image-test
-	$(MAKE) pypi image
+publish: check-clean images-test
+	$(MAKE) pypi images
 	git push origin main
 	git push origin "v$(shell uv version --short)"
 
