@@ -3,7 +3,7 @@ Bluetooth operations to external systems through a lightweight HTTP service.
 
 Project repository: https://gitlab.com/demsking/bluegate
 
-![BlueGate Logo](./htdocs/logo.png)
+![BlueGate Logo](./static/logo.png)
 
 ## Core Capabilities
 
