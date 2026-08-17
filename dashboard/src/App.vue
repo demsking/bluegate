@@ -1022,9 +1022,7 @@ onBeforeUnmount(() => {
       </div>
 
       <header class="mb-1 flex items-center justify-between">
-        <h1 class="m-0 text-2xl font-medium tracking-tight sm:text-6xl">
-          BlueGate
-        </h1>
+        <h1 class="m-0 text-2xl font-medium tracking-tight">BlueGate</h1>
         <button
           class="grid size-9 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200"
           type="button"
