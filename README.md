@@ -2,7 +2,8 @@
 
 [![Buy me a beer](https://img.shields.io/badge/Buy%20me-a%20beer-1f425f.svg)](https://www.buymeacoffee.com/demsking)
 
-**BlueGate** is ...
+**BlueGate** is a Bluetooth gateway and device manager focused on exposing
+Bluetooth operations to external systems through a lightweight HTTP service.
 
 ![BlueGate Logo](https://gitlab.com/demsking/bluegate/-/raw/main/htdocs/logo.png)
 
