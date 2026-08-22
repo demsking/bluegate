@@ -1,6 +1,6 @@
 [project]
 name = "bluegate"
-version = "1.0.0b1"
+version = "1.0.0b2"
 description = "Bluetooth Gateway & Device Manager"
 authors = [{ name = "Sébastien Demanou", email = "demsking@gmail.com" }]
 maintainers = [{ name = "Sébastien Demanou", email = "demsking@gmail.com" }]
