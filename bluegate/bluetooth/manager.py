@@ -16,6 +16,7 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from collections.abc import Mapping
+from time import monotonic
 from typing import Any
 from typing import cast
 from typing import Protocol
@@ -55,6 +56,8 @@ GATT_CHARACTERISTIC_IFACE = "org.bluez.GattCharacteristic1"
 GATT_DESCRIPTOR_IFACE = "org.bluez.GattDescriptor1"
 AGENT_MANAGER_PATH = "/org/bluez"
 AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
+AUTO_CONNECT_RETRY_INTERVAL_SECONDS = 10.0
+MANUAL_DISCONNECT_SUPPRESSION_SECONDS = 300.0
 
 
 class BluetoothManager(Protocol):
@@ -192,6 +195,8 @@ class BlueZManager:
     self._signal_matches: list[str] = []
     self._background_tasks: set[asyncio.Task[None]] = set()
     self._pairing_agent: PairingAgent | None = None
+    self._auto_connect_last_attempt: dict[str, float] = {}
+    self._auto_connect_suppressed_until: dict[str, float] = {}
 
   async def initialize(self) -> None:
     try:
@@ -200,6 +205,7 @@ class BlueZManager:
       self._bluez_available = True
       await self._subscribe_to_signals()
       await self._register_agent()
+      await self._auto_connect_known_devices()
       logger.info("Connected to D-Bus system bus and BlueZ")
     except Exception as exc:
       self._bluez_available = False
@@ -385,6 +391,7 @@ class BlueZManager:
     if device is None:
       return False
 
+    self._auto_connect_suppressed_until.pop(device.id, None)
     iface = await self._get_device_interface(device.object_path)
     await iface.call_connect()
     return True
@@ -394,6 +401,7 @@ class BlueZManager:
     if device is None:
       return False
 
+    self._auto_connect_suppressed_until[device.id] = monotonic() + MANUAL_DISCONNECT_SUPPRESSION_SECONDS
     iface = await self._get_device_interface(device.object_path)
     await iface.call_disconnect()
     return True
@@ -747,6 +755,42 @@ class BlueZManager:
     device = await self.get_device(device_id)
     if device is not None:
       await self._event_broker.publish(DeviceChangedEvent(device=device))
+      await self._maybe_auto_connect_device(device.id)
+
+  async def _auto_connect_known_devices(self) -> None:
+    for device in await self.list_devices():
+      await self._maybe_auto_connect_device(device.id)
+
+  async def _maybe_auto_connect_device(self, device_id: str) -> None:
+    device = await self.get_device(device_id)
+    if device is None:
+      return
+
+    if device.connected or device.blocked:
+      return
+
+    if not device.paired or not device.trusted:
+      return
+
+    now = monotonic()
+    suppressed_until = self._auto_connect_suppressed_until.get(device.id)
+    if suppressed_until is not None:
+      if now < suppressed_until:
+        return
+
+      self._auto_connect_suppressed_until.pop(device.id, None)
+
+    last_attempt = self._auto_connect_last_attempt.get(device.id)
+    if last_attempt is not None and now - last_attempt < AUTO_CONNECT_RETRY_INTERVAL_SECONDS:
+      return
+
+    self._auto_connect_last_attempt[device.id] = now
+
+    try:
+      iface = await self._get_device_interface(device.object_path)
+      await iface.call_connect()
+    except Exception as exc:
+      logger.debug("Auto-connect attempt failed for %s: %s", device.id, exc)
 
   async def _handle_characteristic_properties_changed(self, path: str) -> None:
     if self._event_broker is None:

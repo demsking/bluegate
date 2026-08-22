@@ -21,6 +21,7 @@ from dbus_next.signature import Variant
 from bluegate.bluetooth.bus import SystemBusClient
 from bluegate.bluetooth.events import BluetoothEventBroker
 from bluegate.bluetooth.manager import BlueZManager
+from bluegate.bluetooth.manager import MANUAL_DISCONNECT_SUPPRESSION_SECONDS
 from bluegate.models.adapter import Adapter
 from bluegate.models.device import Device
 
@@ -164,5 +165,77 @@ def test_list_devices_reads_battery_level_from_battery_interface(monkeypatch) ->
 
     assert len(devices) == 1
     assert devices[0].battery_level == 92
+
+  asyncio.run(_run())
+
+
+def test_handle_properties_changed_auto_connects_trusted_paired_device(monkeypatch) -> None:
+  async def _run() -> None:
+    broker = BluetoothEventBroker()
+    manager = BlueZManager(SystemBusClient(), broker)
+
+    device = _make_device().model_copy(update={"connected": False, "paired": True, "trusted": True})
+    connect_calls: list[str] = []
+
+    class FakeDeviceInterface:
+      async def call_connect(self) -> None:
+        connect_calls.append(device.id)
+
+    async def fake_get_device(device_id: str) -> Device | None:
+      if device_id == device.id:
+        return device
+      return None
+
+    async def fake_get_device_interface(_path: str) -> FakeDeviceInterface:
+      return FakeDeviceInterface()
+
+    monkeypatch.setattr(manager, "get_device", fake_get_device)
+    monkeypatch.setattr(manager, "_get_device_interface", fake_get_device_interface)
+
+    message = SimpleNamespace(path=device.object_path)
+
+    await manager._handle_properties_changed(message)
+
+    assert connect_calls == [device.id]
+
+  asyncio.run(_run())
+
+
+def test_disconnect_temporarily_suppresses_auto_connect(monkeypatch) -> None:
+  async def _run() -> None:
+    manager = BlueZManager(SystemBusClient(), BluetoothEventBroker())
+    device = _make_device().model_copy(update={"connected": True, "paired": True, "trusted": True})
+    connect_calls: list[str] = []
+
+    class FakeDeviceInterface:
+      async def call_disconnect(self) -> None:
+        return None
+
+      async def call_connect(self) -> None:
+        connect_calls.append(device.id)
+
+    async def fake_get_device(device_id: str) -> Device | None:
+      if device_id != device.id:
+        return None
+      return device
+
+    async def fake_get_device_interface(_path: str) -> FakeDeviceInterface:
+      return FakeDeviceInterface()
+
+    monkeypatch.setattr(manager, "get_device", fake_get_device)
+    monkeypatch.setattr(manager, "_get_device_interface", fake_get_device_interface)
+
+    disconnected = await manager.disconnect_device(device.id)
+    assert disconnected is True
+
+    device.connected = False
+    await manager._maybe_auto_connect_device(device.id)
+    assert connect_calls == []
+
+    manager._auto_connect_suppressed_until[device.id] = 0.0
+    await manager._maybe_auto_connect_device(device.id)
+    assert connect_calls == [device.id]
+
+    assert MANUAL_DISCONNECT_SUPPRESSION_SECONDS > 0
 
   asyncio.run(_run())

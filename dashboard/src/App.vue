@@ -692,6 +692,8 @@ async function runDeviceAction(
   await runOperation("device", device.id, action, async () => {
     if (action === "pair") {
       await api.pairDevice(device.id);
+      await api.trustDevice(device.id);
+      await api.connectDevice(device.id);
     } else if (action === "unpair") {
       await api.unpairDevice(device.id);
     } else if (action === "connect") {
