@@ -1070,11 +1070,13 @@ onBeforeUnmount(() => {
             >
               <Settings2 :size="18" class="shrink-0 text-slate-300" />
             </button>
-            <ChevronRight
-              :size="18"
-              class="shrink-0 text-slate-500 transition-transform duration-200"
-              :class="selectorOpen ? 'rotate-90' : 'rotate-0'"
-            />
+            <template v-if="nodes.length > 1">
+              <ChevronRight
+                :size="18"
+                class="shrink-0 text-slate-500 transition-transform duration-200"
+                :class="selectorOpen ? 'rotate-90' : 'rotate-0'"
+              />
+            </template>
           </div>
         </button>
 
