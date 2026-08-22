@@ -205,7 +205,7 @@ class BlueZManager:
       self._bluez_available = True
       await self._subscribe_to_signals()
       await self._register_agent()
-      await self._auto_connect_known_devices()
+      self._spawn_background_task(self._auto_connect_known_devices())
       logger.info("Connected to D-Bus system bus and BlueZ")
     except Exception as exc:
       self._bluez_available = False

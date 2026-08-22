@@ -239,3 +239,47 @@ def test_disconnect_temporarily_suppresses_auto_connect(monkeypatch) -> None:
     assert MANUAL_DISCONNECT_SUPPRESSION_SECONDS > 0
 
   asyncio.run(_run())
+
+
+def test_initialize_does_not_block_on_auto_connect(monkeypatch) -> None:
+  async def _run() -> None:
+    manager = BlueZManager(SystemBusClient(), BluetoothEventBroker())
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_connect() -> object:
+      return object()
+
+    async def fake_disconnect() -> None:
+      return None
+
+    async def fake_get_managed_objects() -> dict[str, dict[str, dict[str, Variant]]]:
+      return {}
+
+    async def fake_subscribe_to_signals() -> None:
+      return None
+
+    async def fake_register_agent() -> None:
+      return None
+
+    async def fake_auto_connect_known_devices() -> None:
+      started.set()
+      await release.wait()
+
+    monkeypatch.setattr(manager._bus_client, "connect", fake_connect)
+    monkeypatch.setattr(manager._bus_client, "disconnect", fake_disconnect)
+    monkeypatch.setattr(manager, "_get_managed_objects", fake_get_managed_objects)
+    monkeypatch.setattr(manager, "_subscribe_to_signals", fake_subscribe_to_signals)
+    monkeypatch.setattr(manager, "_register_agent", fake_register_agent)
+    monkeypatch.setattr(manager, "_auto_connect_known_devices", fake_auto_connect_known_devices)
+
+    await asyncio.wait_for(manager.initialize(), timeout=0.5)
+    await asyncio.sleep(0)
+    assert started.is_set()
+
+    release.set()
+    if manager._background_tasks:
+      await asyncio.wait_for(asyncio.gather(*manager._background_tasks), timeout=0.5)
+
+  asyncio.run(_run())
