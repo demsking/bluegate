@@ -265,6 +265,10 @@ function selectedNodeBadge(): string {
   return `${selectedNodeSnapshot.value.health.dbus} · ${selectedNodeSnapshot.value.health.bluez}`;
 }
 
+const appVersion = computed(
+  () => selectedNodeSnapshot.value?.health?.version ?? "dev",
+);
+
 function syncServerDeviceName(): void {
   if (selectedAdapter.value == null) {
     serverDeviceName.value = "";
@@ -960,11 +964,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="min-h-screen bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.20),transparent_36%),linear-gradient(180deg,#020617,#09090b_40%,#030712_100%)] px-3 py-5 text-slate-100 sm:px-4 sm:py-6"
+    class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.20),transparent_36%),linear-gradient(180deg,#020617,#09090b_40%,#030712_100%)] px-3 py-5 text-slate-100 sm:px-4 sm:py-6"
   >
     <main
       v-if="showGlobalEmptyState"
-      class="mx-auto grid min-h-[calc(100vh-2.5rem)] w-full max-w-117.5 place-items-center"
+      class="mx-auto grid min-h-[calc(100vh-2.5rem)] w-full max-w-117.5 flex-1 place-items-center"
     >
       <section
         class="w-full rounded-[1.8rem] p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
@@ -1000,7 +1004,7 @@ onBeforeUnmount(() => {
 
     <main
       v-else
-      class="mx-auto flex w-full max-w-117.5 flex-col gap-3"
+      class="mx-auto flex w-full max-w-117.5 flex-1 flex-col gap-3"
       @touchstart="handleSwipeRefreshStart"
       @touchmove="handleSwipeRefreshMove"
       @touchend="handleSwipeRefreshEnd"
@@ -1424,6 +1428,17 @@ onBeforeUnmount(() => {
         </template>
       </section>
     </main>
+
+    <footer
+      class="flex items-center justify-center w-full bg-slate-950/60 pt-5 text-center text-[8px] font-medium uppercase tracking-[0.28em] text-slate-400 shadow-[0_-10px_30px_rgba(2,6,23,0.4)] backdrop-blur-md transition-all duration-300 ease-out hover:text-slate-200"
+    >
+      <span
+        class="inline-block -translate-y-1 opacity-80 transition-all duration-300 ease-out hover:translate-y-0 hover:opacity-100"
+      >
+        v{{ appVersion }}
+      </span>
+    </footer>
+
     <TooltipProvider>
       <Drawer v-model:open="deviceSheetOpen">
         <DrawerContent v-if="selectedDevice">
