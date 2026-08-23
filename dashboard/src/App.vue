@@ -144,15 +144,37 @@ const selectedDeviceName = ref("");
 const availableSectionRef = ref<HTMLElement | null>(null);
 const autoScanArmed = ref(true);
 const pullRefreshStartY = ref<number | null>(null);
+const pullRefreshStartX = ref<number | null>(null);
+const pullRefreshTracking = ref(false);
+const pullRefreshRefreshing = ref(false);
 const pullRefreshDistance = ref(0);
 
+const PULL_REFRESH_TRIGGER = 84;
+const PULL_REFRESH_MAX = 128;
+
 const pullRefreshProgress = computed(() =>
-  Math.min(pullRefreshDistance.value / 90, 1),
+  Math.min(pullRefreshDistance.value / PULL_REFRESH_TRIGGER, 1),
+);
+
+const pullRefreshArmed = computed(
+  () => pullRefreshDistance.value >= PULL_REFRESH_TRIGGER,
+);
+
+const pullRefreshVisible = computed(
+  () => pullRefreshDistance.value > 0 || pullRefreshRefreshing.value,
 );
 
 const pullRefreshIndicatorStyle = computed(() => ({
-  transform: `translateY(${Math.min(pullRefreshDistance.value * 0.5, 36)}px) rotate(${pullRefreshDistance.value * 1.5}deg) scale(${1 + pullRefreshProgress.value * 0.08})`,
-  opacity: String(Math.min(0.35 + pullRefreshProgress.value, 1)),
+  transform: `translate3d(0, ${Math.min(pullRefreshDistance.value * 0.58, 42)}px, 0) rotate(${pullRefreshDistance.value * 1.25}deg) scale(${1 + pullRefreshProgress.value * 0.12})`,
+  opacity: String(Math.min(0.2 + pullRefreshProgress.value * 1.2, 1)),
+}));
+
+const pullRefreshContentStyle = computed(() => ({
+  transform: `translate3d(0, ${Math.min(pullRefreshDistance.value * 0.42, 46)}px, 0)`,
+  transition: pullRefreshTracking.value
+    ? "transform 0ms linear"
+    : "transform 260ms cubic-bezier(0.2, 0, 0, 1)",
+  willChange: "transform",
 }));
 
 let availableObserver: IntersectionObserver | null = null;
@@ -755,11 +777,33 @@ async function saveSelectedDeviceName(): Promise<void> {
 
 function resetPullRefresh(): void {
   pullRefreshStartY.value = null;
+  pullRefreshStartX.value = null;
+  pullRefreshTracking.value = false;
   pullRefreshDistance.value = 0;
 }
 
+function isScrollAtTop(): boolean {
+  return window.scrollY <= 0 && document.documentElement.scrollTop <= 0;
+}
+
+function toPullDistance(rawDelta: number): number {
+  if (rawDelta <= 0) {
+    return 0;
+  }
+
+  if (rawDelta <= 96) {
+    return rawDelta * 0.55;
+  }
+
+  return Math.min(96 * 0.55 + (rawDelta - 96) * 0.22, PULL_REFRESH_MAX);
+}
+
 function handleSwipeRefreshStart(event: TouchEvent): void {
-  if (dashboardLoading.value || window.scrollY > 0) {
+  if (
+    dashboardLoading.value ||
+    pullRefreshRefreshing.value ||
+    !isScrollAtTop()
+  ) {
     return;
   }
 
@@ -768,20 +812,40 @@ function handleSwipeRefreshStart(event: TouchEvent): void {
   }
 
   pullRefreshStartY.value = event.touches[0].clientY;
+  pullRefreshStartX.value = event.touches[0].clientX;
+  pullRefreshTracking.value = true;
 }
 
 function handleSwipeRefreshMove(event: TouchEvent): void {
-  if (pullRefreshStartY.value == null || dashboardLoading.value) {
+  if (
+    pullRefreshStartY.value == null ||
+    pullRefreshStartX.value == null ||
+    dashboardLoading.value ||
+    pullRefreshRefreshing.value
+  ) {
     return;
   }
 
-  const deltaY = event.touches[0].clientY - pullRefreshStartY.value;
+  const touch = event.touches[0];
+  const deltaY = touch.clientY - pullRefreshStartY.value;
+  const deltaX = Math.abs(touch.clientX - pullRefreshStartX.value);
+
+  if (deltaX > Math.abs(deltaY) * 0.92) {
+    pullRefreshTracking.value = false;
+    pullRefreshDistance.value = 0;
+    return;
+  }
+
   if (deltaY <= 0) {
     pullRefreshDistance.value = 0;
     return;
   }
 
-  pullRefreshDistance.value = Math.min(deltaY * 0.8, 110);
+  if (!isScrollAtTop() && pullRefreshDistance.value <= 0) {
+    return;
+  }
+
+  pullRefreshDistance.value = toPullDistance(deltaY);
 
   if (pullRefreshDistance.value > 0) {
     event.preventDefault();
@@ -789,8 +853,18 @@ function handleSwipeRefreshMove(event: TouchEvent): void {
 }
 
 function handleSwipeRefreshEnd(): void {
-  if (pullRefreshDistance.value >= 80) {
-    void refreshDashboardAndScan();
+  if (
+    pullRefreshArmed.value &&
+    !dashboardLoading.value &&
+    !pullRefreshRefreshing.value
+  ) {
+    pullRefreshRefreshing.value = true;
+    pullRefreshDistance.value = PULL_REFRESH_TRIGGER * 0.82;
+    void refreshDashboardAndScan().finally(() => {
+      pullRefreshRefreshing.value = false;
+      resetPullRefresh();
+    });
+    return;
   }
 
   resetPullRefresh();
@@ -1004,15 +1078,16 @@ onBeforeUnmount(() => {
 
     <main
       v-else
-      class="mx-auto flex w-full max-w-117.5 flex-1 flex-col gap-3"
+      class="android-main mx-auto flex w-full max-w-117.5 flex-1 flex-col gap-3"
       @touchstart="handleSwipeRefreshStart"
       @touchmove="handleSwipeRefreshMove"
       @touchend="handleSwipeRefreshEnd"
       @touchcancel="handleSwipeRefreshEnd"
+      :style="pullRefreshContentStyle"
     >
       <div
-        v-if="pullRefreshDistance > 0"
-        class="pointer-events-none flex justify-center transition-all duration-150"
+        v-if="pullRefreshVisible"
+        class="pointer-events-none pull-refresh-indicator flex justify-center transition-all duration-150"
       >
         <div
           class="grid size-10 place-items-center rounded-full border border-sky-400/30 bg-sky-500/10 text-sky-100 shadow-[0_12px_30px_rgba(14,165,233,0.25)]"
@@ -1021,7 +1096,11 @@ onBeforeUnmount(() => {
           <RefreshCw
             :size="18"
             :class="
-              dashboardLoading || pullRefreshDistance > 18 ? 'animate-spin' : ''
+              pullRefreshRefreshing ||
+              pullRefreshArmed ||
+              pullRefreshDistance > 18
+                ? 'animate-spin'
+                : ''
             "
           />
         </div>

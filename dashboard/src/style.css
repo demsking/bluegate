@@ -1,5 +1,4 @@
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -133,12 +132,15 @@
 
 html {
   scroll-behavior: smooth;
+  overscroll-behavior-y: none;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 button,
@@ -155,6 +157,18 @@ button:not(:disabled),
 
 #app {
   min-height: 100vh;
+}
+
+.android-main {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.pull-refresh-indicator {
+  position: sticky;
+  top: 0.25rem;
+  z-index: 40;
 }
 
 @layer base {
