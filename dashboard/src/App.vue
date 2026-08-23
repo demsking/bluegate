@@ -1029,13 +1029,14 @@ onBeforeUnmount(() => {
 
       <header class="mb-1 flex items-center justify-between">
         <h1 class="m-0 text-2xl font-medium tracking-tight">BlueGate</h1>
-        <button
+        <a
+          href="https://demsking.gitlab.io/bluegate/"
+          target="_blank"
+          rel="noreferrer"
           class="grid size-9 place-items-center rounded-full border border-white/10 bg-white/5 text-slate-200"
-          type="button"
-          aria-label="Help"
         >
           <CircleHelp :size="22" />
-        </button>
+        </a>
       </header>
 
       <section
